@@ -192,12 +192,13 @@ def main():
         'database': 'db21992'
     }
     
+  
     DEST_CONFIG = {
-        'host': 'db21993.public.databaseasp.net',
+        'host': 'db29413.public.databaseasp.net',
         'port': 3306,
-        'user': 'db21993',
-        'password': 'tB!5@s2YZ-g9',
-        'database': 'db21993'
+        'user': 'db29413',
+        'password': 's_3PM9c%=B8j',
+        'database': 'db29413'
     }
     
     # ========================================
@@ -231,16 +232,16 @@ def main():
     
     # Example 2: Category table transfer
     TRANSFER_CONFIG_2 = {
-        'source_table': 'category',
-        'dest_table': 'category',
+        'source_table': 'categories',
+        'dest_table': 'categories',
         'batch_size': 1000,
         'where_condition': '',    # Optional filter
         'column_mapping': {
             # Source column → Destination mapping
             'id': 'id',                                    # Direct mapping
             'en_title': 'name',                            # English title → name
-            'ar_title': 'namear',                          # Arabic title → namear
-            'pic': 'image_url',                            # pic → image_url
+            'ar_title': 'name_ar',                          # Arabic title → namear
+            'pic': 'image',                            # pic → image_url
             'created_at': 'created_at',                    # Direct mapping
         },
         'extra_columns': {
@@ -361,7 +362,7 @@ def main():
     # Choose which configuration to use
     # ACTIVE_CONFIG = TRANSFER_CONFIG_1  # For users table
     # ACTIVE_CONFIG = TRANSFER_CONFIG_2  # For category table
-    ACTIVE_CONFIG = TRANSFER_CONFIG_5  # For product table with JOIN
+    ACTIVE_CONFIG = TRANSFER_CONFIG_3  # For product table with JOIN
     
     # To run multiple transfers, use this instead:
     # CONFIGS_TO_RUN = [TRANSFER_CONFIG_1, TRANSFER_CONFIG_2, TRANSFER_CONFIG_3]
