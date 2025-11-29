@@ -8,6 +8,7 @@ class FlexibleMySQLTransfer:
     def __init__(self):
         self.source_conn = None
         self.dest_conn = None
+        self.valid_user_ids = None  # Cache for valid user IDs
     
     def connect_to_databases(self, source_config: dict, dest_config: dict) -> bool:
         """Connect to both source and destination databases"""
@@ -26,6 +27,22 @@ class FlexibleMySQLTransfer:
             print(f"✗ Database connection error: {e}")
             return False
     
+    def load_valid_user_ids(self) -> set:
+        """Load all valid user IDs from destination users table"""
+        if self.valid_user_ids is not None:
+            return self.valid_user_ids
+        
+        try:
+            cursor = self.dest_conn.cursor()
+            cursor.execute("SELECT id FROM users")
+            self.valid_user_ids = {row[0] for row in cursor.fetchall()}
+            cursor.close()
+            print(f"✓ Loaded {len(self.valid_user_ids)} valid user IDs from destination")
+            return self.valid_user_ids
+        except Error as e:
+            print(f"⚠️ Warning: Could not load user IDs: {e}")
+            return set()
+    
     def transfer_with_mapping(self, transfer_config: dict) -> bool:
         """Transfer data with column mapping and transformations"""
         try:
@@ -35,8 +52,16 @@ class FlexibleMySQLTransfer:
             batch_size = transfer_config.get('batch_size', 1000)
             where_condition = transfer_config.get('where_condition', '')
             extra_columns = transfer_config.get('extra_columns', {})  # For destination-only columns
+            validate_foreign_keys = transfer_config.get('validate_foreign_keys', False)
+            foreign_key_columns = transfer_config.get('foreign_key_columns', {})  # e.g., {'buyer_id': 'users'}
             
             print(f"📋 Starting transfer: {source_table} → {dest_table}")
+            
+            # Load valid foreign key values if needed
+            if validate_foreign_keys and foreign_key_columns:
+                for fk_column, ref_table in foreign_key_columns.items():
+                    if ref_table == 'users':
+                        self.load_valid_user_ids()
             
             # Prepare cursors
             source_cursor = self.source_conn.cursor()
@@ -92,6 +117,7 @@ class FlexibleMySQLTransfer:
             # Transfer data in batches
             source_cursor.execute(select_query)
             transferred = 0
+            invalid_buyer_ids = set()  # Track invalid buyer_ids for summary
             
             while True:
                 batch = source_cursor.fetchmany(batch_size)
@@ -114,7 +140,18 @@ class FlexibleMySQLTransfer:
                         
                         if isinstance(dest_info, str):
                             # Simple mapping - use value as is
-                            transformed_row.append(source_value)
+                            final_value = source_value
+                            
+                            # Validate foreign key if needed
+                            if validate_foreign_keys and dest_info in foreign_key_columns:
+                                ref_table = foreign_key_columns[dest_info]
+                                if ref_table == 'users' and self.valid_user_ids is not None:
+                                    # Check if user_id exists in destination
+                                    if source_value is not None and source_value not in self.valid_user_ids:
+                                        invalid_buyer_ids.add(source_value)
+                                        final_value = None
+                            
+                            transformed_row.append(final_value)
                         elif isinstance(dest_info, dict):
                             # Complex mapping with transformations
                             if 'default_value' in dest_info:
@@ -127,7 +164,18 @@ class FlexibleMySQLTransfer:
                                 transformed_row.append(transformed_value)
                             else:
                                 # Use source value
-                                transformed_row.append(source_value)
+                                final_value = source_value
+                                
+                                # Validate foreign key if needed
+                                dest_col = dest_info.get('column', src_col)
+                                if validate_foreign_keys and dest_col in foreign_key_columns:
+                                    ref_table = foreign_key_columns[dest_col]
+                                    if ref_table == 'users' and self.valid_user_ids is not None:
+                                        if source_value is not None and source_value not in self.valid_user_ids:
+                                            invalid_buyer_ids.add(source_value)
+                                            final_value = None
+                                
+                                transformed_row.append(final_value)
                     
                     # Add extra columns (destination-only)
                     for extra_col, extra_info in extra_columns.items():
@@ -155,24 +203,59 @@ class FlexibleMySQLTransfer:
             source_cursor.close()
             dest_cursor.close()
             
+            # Display summary of invalid buyer_ids if any
+            if invalid_buyer_ids:
+                print(f"\n⚠️  WARNING SUMMARY: Found {len(invalid_buyer_ids)} invalid buyer_id(s) that don't exist in destination users table:")
+                print("   These buyer_ids were set to NULL during transfer:")
+                # Sort and display buyer_ids (limit to first 50 for readability)
+                sorted_ids = sorted(invalid_buyer_ids)
+                if len(sorted_ids) <= 50:
+                    print(f"   {', '.join(map(str, sorted_ids))}")
+                else:
+                    print(f"   {', '.join(map(str, sorted_ids[:50]))} ... and {len(sorted_ids) - 50} more")
+                print(f"   Total products affected: {len(invalid_buyer_ids)}")
+            
             print(f"✅ Successfully transferred {transferred} records!")
             return True
             
         except Error as e:
             print(f"✗ Error during data transfer: {e}")
+            # Consume any unread results
+            try:
+                if 'source_cursor' in locals():
+                    source_cursor.fetchall()  # Consume unread results
+            except:
+                pass
             if self.dest_conn:
                 self.dest_conn.rollback()
             return False
     
     def close_connections(self):
         """Close database connections"""
-        if self.source_conn and self.source_conn.is_connected():
-            self.source_conn.close()
-            print("✓ Source connection closed")
+        try:
+            if self.source_conn:
+                try:
+                    # Consume any unread results before closing
+                    if self.source_conn.is_connected():
+                        self.source_conn.close()
+                        print("✓ Source connection closed")
+                except Exception as e:
+                    # If there are unread results, try to close anyway
+                    try:
+                        self.source_conn.close()
+                        print("✓ Source connection closed")
+                    except:
+                        pass
+        except:
+            pass
         
-        if self.dest_conn and self.dest_conn.is_connected():
-            self.dest_conn.close()
-            print("✓ Destination connection closed")
+        try:
+            if self.dest_conn:
+                if self.dest_conn.is_connected():
+                    self.dest_conn.close()
+                    print("✓ Destination connection closed")
+        except:
+            pass
 
 
 # Transformation functions
@@ -252,10 +335,10 @@ def main():
         }
     }
     
-    # Example 3: Product table with JOIN to get user_id (handles duplicates)
+    # Example 3: Product table transfer
     TRANSFER_CONFIG_3 = {
         'source_table': '''(
-            SELECT p.id, p.category_id, up.user_id,p.en_url, p.created_at
+            SELECT p.id, p.category_id, up.user_id,p.en_url, cast(coalesce(p.price, 0) as decimal(10,2)) as price, p.created_at
             FROM product p 
             LEFT JOIN (
                 SELECT product_id, user_id, 
@@ -266,13 +349,15 @@ def main():
         'dest_table': 'products',
         'batch_size': 1000,
         'where_condition': '',    # Optional filter
+        'validate_foreign_keys': True,  # Enable foreign key validation
+        'foreign_key_columns': {'buyer_id': 'users'},  # Validate buyer_id against users table
         'column_mapping': {
             # Source column → Destination mapping
             'id': 'id',                                      # Product ID
             'category_id': 'category_id', 
-             'en_url':'url',                                     # Category ID
-            'user_id': 'user_id',                           # User ID (deduplicated)
-            'created_at': 'created_at',                      # Created at
+            'en_url': 'url',                                 # en_url → url
+            'user_id': 'buyer_id',                           # Source user_id → Destination buyer_id
+            'price': 'price',                                # price → price (int to decimal)
         },
         'extra_columns': {
             # Columns that only exist in destination
@@ -299,7 +384,7 @@ def main():
         'column_mapping': {
             'id': 'id',
             'category_id': 'category_id',
-            'user_id': 'user_id',
+            'buyer_id': 'user_id',
             'created_at': 'created_at',
         },
         'extra_columns': {
@@ -360,9 +445,9 @@ def main():
     # ========================================
     
     # Choose which configuration to use
-    # ACTIVE_CONFIG = TRANSFER_CONFIG_1  # For users table
+    #ACTIVE_CONFIG = TRANSFER_CONFIG_1  # For users table
     # ACTIVE_CONFIG = TRANSFER_CONFIG_2  # For category table
-    ACTIVE_CONFIG = TRANSFER_CONFIG_3  # For product table with JOIN
+    ACTIVE_CONFIG = TRANSFER_CONFIG_3 # For product table with JOIN
     
     # To run multiple transfers, use this instead:
     # CONFIGS_TO_RUN = [TRANSFER_CONFIG_1, TRANSFER_CONFIG_2, TRANSFER_CONFIG_3]
