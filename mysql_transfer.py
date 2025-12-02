@@ -440,6 +440,31 @@ def main():
         }
     }
     
+
+
+    # Example 5: Config for branches table
+    TRANSFER_CONFIG_6 = {
+        'source_table': 'cities',
+        'dest_table': 'branches',
+        'batch_size': 1000,
+        'where_condition': '',
+        'column_mapping': {
+            # Source column → Destination mapping
+            'id': 'id',
+            'en_name': 'name',
+        },
+        'extra_columns': {
+            'created_by': {'default_value': 1},
+            'is_deleted': {'default_value': False},
+            'version': {'transform': current_timestamp},
+            'created_by': {'default_value': 1},
+            'created_at': {'transform': current_timestamp},
+            'modified_by': {'default_value': None},
+            'modified_at': {'default_value': None},
+            'deleted_by': {'default_value': None},
+            'deleted_at': {'default_value': None},
+        }
+    }
     # ========================================
     # EXECUTION
     # ========================================
@@ -447,10 +472,10 @@ def main():
     # Choose which configuration to use
     #ACTIVE_CONFIG = TRANSFER_CONFIG_1  # For users table
     # ACTIVE_CONFIG = TRANSFER_CONFIG_2  # For category table
-    ACTIVE_CONFIG = TRANSFER_CONFIG_3 # For product table with JOIN
+    #ACTIVE_CONFIG = TRANSFER_CONFIG_3 # For product table with JOIN
     
-    # To run multiple transfers, use this instead:
-    # CONFIGS_TO_RUN = [TRANSFER_CONFIG_1, TRANSFER_CONFIG_2, TRANSFER_CONFIG_3]
+    #To run multiple transfers, use this instead:
+    CONFIGS_TO_RUN = [ TRANSFER_CONFIG_6]
     
     # Initialize transfer
     transfer = FlexibleMySQLTransfer()
@@ -463,28 +488,28 @@ def main():
             sys.exit(1)
         
         # Option 1: Run single transfer
-        if 'ACTIVE_CONFIG' in locals():
-            print(f"📋 Single transfer: {ACTIVE_CONFIG['source_table']} → {ACTIVE_CONFIG['dest_table']}")
-            success = transfer.transfer_with_mapping(ACTIVE_CONFIG)
+        # if 'ACTIVE_CONFIG' in locals():
+        #     print(f"📋 Single transfer: {ACTIVE_CONFIG['source_table']} → {ACTIVE_CONFIG['dest_table']}")
+        #     success = transfer.transfer_with_mapping(ACTIVE_CONFIG)
             
-            if success:
-                print("🎉 Data transfer completed successfully!")
-            else:
-                print("❌ Data transfer failed!")
-                sys.exit(1)
+        #     if success:
+        #         print("🎉 Data transfer completed successfully!")
+        #     else:
+        #         print("❌ Data transfer failed!")
+        #         sys.exit(1)
         
         # Option 2: Run multiple transfers (uncomment to use)
-        # if 'CONFIGS_TO_RUN' in locals():
-        #     print(f"📋 Running {len(CONFIGS_TO_RUN)} transfers...")
-        #     for i, config in enumerate(CONFIGS_TO_RUN, 1):
-        #         print(f"\n🔄 Transfer {i}/{len(CONFIGS_TO_RUN)}: {config['source_table']} → {config['dest_table']}")
-        #         success = transfer.transfer_with_mapping(config)
-        #         if not success:
-        #             print(f"❌ Transfer {i} failed! Stopping.")
-        #             sys.exit(1)
-        #         print(f"✅ Transfer {i} completed!")
-        #     
-        #     print("🎉 All transfers completed successfully!")
+        if 'CONFIGS_TO_RUN' in locals():
+            print(f"📋 Running {len(CONFIGS_TO_RUN)} transfers...")
+            for i, config in enumerate(CONFIGS_TO_RUN, 1):
+                print(f"\n🔄 Transfer {i}/{len(CONFIGS_TO_RUN)}: {config['source_table']} → {config['dest_table']}")
+                success = transfer.transfer_with_mapping(config)
+                if not success:
+                    print(f"❌ Transfer {i} failed! Stopping.")
+                    sys.exit(1)
+                print(f"✅ Transfer {i} completed!")
+            
+            print("🎉 All transfers completed successfully!")
             
     except KeyboardInterrupt:
         print("\n⚠️ Transfer interrupted by user")
@@ -496,3 +521,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+# to run the script: python mysql_transfer.py
